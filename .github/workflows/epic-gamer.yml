@@ -134,7 +134,7 @@ jobs:
           LLM_PROVIDER: ${{ inputs.provider || 'glm' }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_BASE_URL: ""
-          GEMINI_MODEL: gemini-3.8-flash
+          GEMINI_MODEL: gemini-2.5-pro
           GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
           GLM_BASE_URL: https://open.bigmodel.cn/api/paas/v4
           GLM_MODEL: glm-4.6v-flash
@@ -153,6 +153,10 @@ jobs:
           PYTHONPATH: app
         run: |
           echo "🚀 启动定时领取任务（支持 Gemini/AiHubMix/GLM）..."
+          if [ "$LLM_PROVIDER" = "gemini" ] && [ "$(date -u +%Y%m%d)" -ge 20261201 ]; then
+            echo "Gemini 2.5 Pro retired; select an explicitly supported free model before retrying."
+            exit 1
+          fi
           xvfb-run --auto-servernum --server-num=1 --server-args='-screen 0, 1920x1080x24' uv run app/deploy.py
 
       - name: Write success summary

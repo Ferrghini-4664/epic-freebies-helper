@@ -1458,3 +1458,9 @@
 - Cause: Model output or coordinate interpretation remains unverified.
 - Changed: Manual Gemini routing uses gemini-3.8-flash on the official endpoint.
 - Result: Model selection updated for a user-authorized trial, pending runtime verification.
+
+## 2026-11-23 · Trial Gemini 2.5 Pro
+
+- User requested the strongest free-tier Gemini 2.5 model.
+- Changed: Manual Gemini route uses gemini-2.5-pro and stops from 2026-12-01 UTC to prevent the announced automatic model migration.
+- Result: Trial pending runtime validation; availability depends on Google project eligibility.
