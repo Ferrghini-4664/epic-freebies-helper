@@ -1430,3 +1430,10 @@
   - 改为 `offerId` 优先精确匹配；仅当 `promotion` 拿不到 `offerId` 时才退回 `namespace` 兜底，保持对旧数据的兼容。
   - 验证：修复后同一账号里「Android 已领、iOS 未领」的状态不再被判成已拥有；重新提交 iOS 后成功到账（订单历史出现对应 `offerId`、商品页 `In Library`、收到 Epic 订单邮件）。
   - 纯判据修正，不改动领取、结账、验证码流程；按仓库规则未运行测试；`py_compile` 与 `git diff --check` 通过。
+
+## 2026-11-23 · Promotion compatibility before upstream sync
+
+- Symptom: Short promotions could start a claim run and still be missing from the original collector.
+- Cause: Detection traversed all current promotion groups, while the collector checked only the first group.
+- Changed: Shared parsing in app/epic_promotions.py, the collector and detection workflow, and a compatibility check for the staged upstream tree.
+- Result: The check covers a weekly offer nearing expiration, an active daily offer in a later group, and import of the deployment entry point. A separate publish job checks the validated tree before pushing.

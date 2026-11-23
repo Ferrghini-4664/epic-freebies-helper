@@ -22,6 +22,7 @@ from playwright.async_api import TimeoutError, FrameLocator
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt
 
+from epic_promotions import PROMOTION_PARAMS, URL_PROMOTIONS, active_free_offers
 from extensions.hcaptcha_runtime import wait_for_challenge_signal
 from models import OrderItem, Order
 from models import PromotionGame
@@ -36,7 +37,6 @@ URL_CART = "https://store.epicgames.com/en-US/cart"
 URL_CART_SUCCESS = "https://store.epicgames.com/en-US/cart/success"
 
 
-URL_PROMOTIONS = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions"
 URL_PRODUCT_PAGE = "https://store.epicgames.com/en-US/p/"
 URL_PRODUCT_BUNDLES = "https://store.epicgames.com/en-US/bundles/"
 URL_ORDER_HISTORY = "https://www.epicgames.com/account/v2/payment/ajaxGetOrderHistory"
@@ -73,16 +73,9 @@ class EpicFreeGameRateLimitError(RuntimeError):
 def get_promotions() -> List[PromotionGame]:
     """获取周免游戏数据"""
 
-    def is_discount_game(prot: dict) -> bool | None:
-        with suppress(KeyError, IndexError, TypeError):
-            offers = prot["promotions"]["promotionalOffers"][0]["promotionalOffers"]
-            for i, offer in enumerate(offers):
-                if offer["discountSetting"]["discountPercentage"] == 0:
-                    return True
-
     promotions: List[PromotionGame] = []
 
-    resp = httpx.get(URL_PROMOTIONS, params={"local": "zh-CN"})
+    resp = httpx.get(URL_PROMOTIONS, params=PROMOTION_PARAMS)
 
     try:
         data = resp.json()
@@ -95,10 +88,13 @@ def get_promotions() -> List[PromotionGame]:
         cache_key.parent.mkdir(parents=True, exist_ok=True)
         cache_key.write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
-    # Get store promotion data and <this week free> games
-    for e in data["data"]["Catalog"]["searchStore"]["elements"]:
-        if not is_discount_game(e):
+    seen = set()
+    for game, _ in active_free_offers(data):
+        identity = (game["namespace"], game["id"])
+        if identity in seen:
             continue
+        seen.add(identity)
+        e = game.copy()
 
         # -----------------------------------------------------------
         # 🟢 智能 URL 识别逻辑

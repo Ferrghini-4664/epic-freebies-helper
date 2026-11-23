@@ -7,45 +7,79 @@ on:
     - cron: '25 0 * * *'
 
 permissions: {}
+concurrency:
+  group: sync-upstream-master
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: https://github.com/Ronchy2000/epic-freebies-helper.git
 
 jobs:
-  sync:
+  validate:
     if: github.repository == 'Ferrghini-4664/epic-freebies-helper' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
-      contents: write
-    concurrency:
-      group: sync-upstream-master
-      cancel-in-progress: false
+      contents: read
+    outputs:
+      upstream: ${{ steps.candidate.outputs.upstream }}
+      tree: ${{ steps.candidate.outputs.tree }}
+      changed: ${{ steps.candidate.outputs.changed }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Configure merge author
+          persist-credentials: false
+      - name: Prepare candidate
+        id: candidate
         run: |
+          git show HEAD:scripts/check_sync_compatibility.py > "$RUNNER_TEMP/check_sync_compatibility.py"
+          git fetch --no-tags "$UPSTREAM" refs/heads/master
+          upstream=$(git rev-parse FETCH_HEAD)
+          changed=false
+          if ! git merge-base --is-ancestor "$upstream" HEAD; then
+            git -c user.name=Sync -c user.email=sync@localhost merge --no-ff --no-commit "$upstream"
+            git diff --cached --quiet -- .github/workflows scripts/check_sync_compatibility.py
+            changed=true
+          fi
+          echo "upstream=$upstream" >> "$GITHUB_OUTPUT"
+          echo "tree=$(git write-tree)" >> "$GITHUB_OUTPUT"
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        if: steps.candidate.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+      - name: Check locked dependencies and deployment compatibility
+        if: steps.candidate.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        env:
+          PYTHONPATH: app
+          GEMINI_API_KEY: offline-compatibility-placeholder
+        run: |
+          uv sync --locked --python 3.12 --no-dev
+          uv run --no-sync python "$RUNNER_TEMP/check_sync_compatibility.py"
+
+  publish:
+    needs: validate
+    if: needs.validate.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Publish the verified tree
+        env:
+          VERIFIED_UPSTREAM: ${{ needs.validate.outputs.upstream }}
+          VERIFIED_TREE: ${{ needs.validate.outputs.tree }}
+        run: |
+          [[ "$VERIFIED_UPSTREAM" =~ ^[0-9a-f]{40}$ && "$VERIFIED_TREE" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags "$UPSTREAM" refs/heads/master
+          test "$(git rev-parse FETCH_HEAD)" = "$VERIFIED_UPSTREAM"
+          test "$(git ls-remote origin refs/heads/master | cut -f1)" = "$GITHUB_SHA"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-      - name: Merge upstream without force pushing
-        shell: python
-        run: |
-          import subprocess
-
-          def git(*args, check=True):
-              return subprocess.run(['git', *args], check=check).returncode
-
-          def sync(upstream, branch):
-              git('fetch', '--no-tags', upstream, 'refs/heads/master')
-              if git('merge-base', '--is-ancestor', 'FETCH_HEAD', 'HEAD', check=False) == 0:
-                  print('Already synchronized')
-                  return
-              if git('merge', '--no-ff', '--no-commit', 'FETCH_HEAD', check=False):
-                  git('merge', '--abort', check=False)
-                  raise SystemExit('Upstream merge failed; remote branch preserved')
-              if git('diff', '--cached', '--quiet', '--', '.github/workflows', check=False):
-                  git('merge', '--abort')
-                  raise SystemExit('Upstream workflow changes require review; remote branch preserved')
-              git('commit', '-m', 'Merge upstream master')
-              git('push', 'origin', f'HEAD:refs/heads/{branch}')
-
-          sync('https://github.com/Ronchy2000/epic-freebies-helper.git', 'master')
+          git merge --no-ff --no-commit "$VERIFIED_UPSTREAM"
+          git diff --cached --quiet -- .github/workflows scripts/check_sync_compatibility.py
+          test "$(git write-tree)" = "$VERIFIED_TREE"
+          git commit -m 'Merge verified upstream master'
+          git push origin HEAD:refs/heads/master
