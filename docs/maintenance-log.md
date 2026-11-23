@@ -1437,3 +1437,10 @@
 - Cause: Detection traversed all current promotion groups, while the collector checked only the first group.
 - Changed: Shared parsing in app/epic_promotions.py, the collector and detection workflow, and a compatibility check for the staged upstream tree.
 - Result: The check covers a weekly offer nearing expiration, an active daily offer in a later group, and import of the deployment entry point. A separate publish job checks the validated tree before pushing.
+
+## 2026-11-23 · Manual provider selection
+
+- Symptom: Retrying a failed GLM run with Gemini required editing repository variables.
+- Cause: Manual dispatch had no provider input.
+- Changed: epic-gamer.yml adds a GLM/Gemini choice, defaults scheduled runs to GLM Flash, and pins official endpoints and the selected models. Per-task model overrides are cleared so they follow the selected provider.
+- Result: Each manual dispatch starts the complete existing workflow with the chosen provider. Real API credentials remain repository Secrets. Gemini requires a Google project on the Free tier, which the application cannot verify from an API key.
