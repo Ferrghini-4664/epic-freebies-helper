@@ -5,12 +5,72 @@ on:
   schedule:
     # 每周一 UTC 13:30 运行一次（北京时间周一 21:30）
     - cron: '30 13 * * 1'
+    # 北京时间 00:40 主查，12:40 补查。
+    - cron: '40 16 * * *'
+    - cron: '40 4 * * *'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  detect-special:
+    if: github.event_name == 'schedule' && (github.event.schedule == '40 16 * * *' || github.event.schedule == '40 4 * * *')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions: {}
+    outputs:
+      found: ${{ steps.detect.outputs.found }}
+    steps:
+      - name: Check Epic public promotions
+        id: detect
+        shell: python
+        run: |
+          import json
+          import os
+          import time
+          from datetime import datetime, timedelta, timezone
+          from urllib.error import URLError
+          from urllib.request import urlopen
+
+          url = 'https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?local=zh-CN'
+
+          def short_offers(payload, now):
+              if payload.get('errors'):
+                  raise ValueError('Epic returned errors')
+              elements = payload['data']['Catalog']['searchStore']['elements']
+              if not isinstance(elements, list):
+                  raise ValueError('Invalid Epic catalog')
+              found = set()
+              for game in elements:
+                  for group in (game.get('promotions') or {}).get('promotionalOffers', []):
+                      for offer in group['promotionalOffers']:
+                          if offer['discountSetting']['discountPercentage'] != 0:
+                              continue
+                          start = datetime.fromisoformat(offer['startDate'])
+                          end = datetime.fromisoformat(offer['endDate'])
+                          if timedelta(0) < end - start <= timedelta(hours=48) and start <= now < end:
+                              found.add((game['namespace'], game['id'], start.astimezone(timezone.utc).isoformat()))
+              return sorted(found)
+
+          for attempt in range(3):
+              try:
+                  with urlopen(url, timeout=15) as response:
+                      offers = short_offers(json.load(response), datetime.now(timezone.utc))
+                  break
+              except (URLError, TimeoutError, KeyError, TypeError, ValueError):
+                  if attempt == 2:
+                      raise SystemExit('Epic promotion detection failed after three attempts') from None
+                  time.sleep(5 * (attempt + 1))
+
+          print(f'Active short free offers: {len(offers)}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              print('found=' + str(bool(offers)).lower(), file=output)
+
   epic-gamer:
+    needs: detect-special
+    concurrency:
+      group: epic-claim
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     # A single account run can take 15-20 minutes. Multi-account runs are
     # sequential, so scale the timeout with the number of accounts by setting
@@ -19,7 +79,10 @@ jobs:
     timeout-minutes: ${{ fromJSON(vars.JOB_TIMEOUT_MINUTES || '60') }}
 
     # 默认不在主仓库自身执行定时任务；Fork 后的仓库会正常运行。
-    if: github.repository != 'Ronchy2000/epic-freebies-helper'
+    if: >-
+      !cancelled() && github.repository != 'Ronchy2000/epic-freebies-helper' &&
+      (github.event_name == 'workflow_dispatch' || github.event.schedule == '30 13 * * 1' ||
+       (needs.detect-special.result == 'success' && needs.detect-special.outputs.found == 'true'))
 
     steps:
       - name: Checkout repository
