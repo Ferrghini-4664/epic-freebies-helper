@@ -1444,3 +1444,10 @@
 - Cause: Manual dispatch had no provider input.
 - Changed: epic-gamer.yml adds a GLM/Gemini choice, defaults scheduled runs to GLM Flash, and pins official endpoints and the selected models. Per-task model overrides are cleared so they follow the selected provider.
 - Result: Each manual dispatch starts the complete existing workflow with the chosen provider. Real API credentials remain repository Secrets. Gemini requires a Google project on the Free tier, which the application cannot verify from an API key.
+
+## 2026-11-23 · Pin claim runner to Ubuntu 24.04
+
+- Symptom: First full run failed before account login.
+- Cause: Playwright 1.53 does not support Firefox installation on ubuntu26.04 supplied by ubuntu-latest.
+- Changed: Claim job uses ubuntu-24.04.
+- Result: Retry full workflow on the supported runner.
