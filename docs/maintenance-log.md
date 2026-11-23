@@ -1451,3 +1451,10 @@
 - Cause: Playwright 1.53 does not support Firefox installation on ubuntu26.04 supplied by ubuntu-latest.
 - Changed: Claim job uses ubuntu-24.04.
 - Result: Retry full workflow on the supported runner.
+
+## 2026-11-23 · Try Gemini 3.8 Flash
+
+- Symptom: Gemini 3.5 Flash-Lite returned coordinates outside the challenge bounds.
+- Cause: Model output or coordinate interpretation remains unverified.
+- Changed: Manual Gemini routing uses gemini-3.8-flash on the official endpoint.
+- Result: Model selection updated for a user-authorized trial, pending runtime verification.
