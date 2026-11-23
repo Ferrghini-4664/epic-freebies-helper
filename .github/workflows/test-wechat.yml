@@ -1,0 +1,46 @@
+name: Test WeChat notification
+on:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Send test notification
+        env:
+          WXPUSH_ENDPOINT: ${{ secrets.WXPUSH_ENDPOINT }}
+          WXPUSH_TOKEN: ${{ secrets.WXPUSH_TOKEN }}
+        shell: python
+        run: |
+          import json
+          import os
+          from urllib.error import HTTPError, URLError
+          from urllib.request import Request, urlopen
+
+          endpoint = os.environ["WXPUSH_ENDPOINT"].strip().rstrip("/")
+          token = os.environ["WXPUSH_TOKEN"].strip()
+          if not endpoint or not token:
+              raise SystemExit("Missing WXPUSH_ENDPOINT or WXPUSH_TOKEN")
+          if not endpoint.endswith("/wxsend"):
+              endpoint += "/wxsend"
+          payload = {
+              "title": "Epic 微信提醒测试",
+              "content": "微信推送连接测试成功。请回到聊天确认已收到。",
+              "base_url": endpoint.removesuffix("/wxsend") + "/skin",
+          }
+          request = Request(endpoint, data=json.dumps(payload).encode("utf-8"),
+                            headers={"Content-Type": "application/json", "Authorization": token},
+                            method="POST")
+          try:
+              with urlopen(request, timeout=30) as response:
+                  result = json.load(response)
+          except HTTPError as error:
+              raise SystemExit(f"Push request failed with HTTP {error.code}") from None
+          except (URLError, TimeoutError, ValueError):
+              raise SystemExit("Push request failed: connection error or invalid response") from None
+          if not isinstance(result, dict) or not str(result.get("msg", "")).startswith("Successfully sent messages"):
+              raise SystemExit("Push service did not confirm delivery; inspect Worker status")
+          print("Push service confirmed test message delivery")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("微信测试消息已获推送服务确认，请在微信核对是否收到。\n")
