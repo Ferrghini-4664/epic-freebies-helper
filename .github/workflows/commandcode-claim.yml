@@ -1,0 +1,11 @@
+name: Epic Claim - Command Code GOAT
+
+on:
+  workflow_dispatch:
+
+jobs:
+  claim:
+    uses: ./.github/workflows/epic-gamer.yml
+    with:
+      provider: commandcode
+    secrets: inherit

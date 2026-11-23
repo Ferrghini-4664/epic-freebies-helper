@@ -1470,3 +1470,9 @@
 - User requested access through their existing GOAT subscription.
 - Changed: Manual commandcode choice routes the existing GLM-compatible client to the Provider API using a separate COMMANDCODE_API_KEY and z-ai/glm-5.3-flash. Missing credentials stop before setup.
 - Result: Configuration prepared; image input, structured responses and subscription eligibility require a live check after the user supplies the Secret.
+
+## 2026-11-23 · Separate Command Code run button
+
+- User requested a dedicated GOAT button alongside the original GLM/Gemini selection.
+- Changed: commandcode-claim.yml calls the shared claim workflow with the commandcode provider. Original dispatch offers GLM and Gemini; Gemini routes to gemini-3.8-flash. Removed the obsolete 2.5 retirement cutoff.
+- Result: Both entry points share the existing claim concurrency group, credentials and notification flow.
