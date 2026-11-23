@@ -36,7 +36,17 @@ jobs:
               with urlopen(request, timeout=30) as response:
                   result = json.load(response)
           except HTTPError as error:
-              raise SystemExit(f"Push request failed with HTTP {error.code}") from None
+              body = error.read(8192)
+              try:
+                  reason = json.loads(body).get("msg")
+              except (ValueError, AttributeError):
+                  reason = None
+              if reason == "Invalid token":
+                  raise SystemExit("WXPUSH_TOKEN does not match Worker API_TOKEN") from None
+              if reason == "Failed to get access token":
+                  raise SystemExit("WeChat rejected WX_APPID or WX_SECRET") from None
+              raise SystemExit(f"Push request failed with HTTP {error.code}; response type: " +
+                               ("JSON" if reason else "non-JSON")) from None
           except (URLError, TimeoutError, ValueError):
               raise SystemExit("Push request failed: connection error or invalid response") from None
           if not isinstance(result, dict) or not str(result.get("msg", "")).startswith("Successfully sent messages"):
