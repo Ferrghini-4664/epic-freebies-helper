@@ -7,6 +7,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      - name: Install notification client
+        run: python -m pip install httpx==0.28.1
       - name: Send test notification
         env:
           WXPUSH_ENDPOINT: ${{ secrets.WXPUSH_ENDPOINT }}
@@ -15,8 +17,7 @@ jobs:
         run: |
           import json
           import os
-          from urllib.error import HTTPError, URLError
-          from urllib.request import Request, urlopen
+          import httpx
 
           endpoint = os.environ["WXPUSH_ENDPOINT"].strip().rstrip("/")
           token = os.environ["WXPUSH_TOKEN"].strip()
@@ -29,25 +30,21 @@ jobs:
               "content": "微信推送连接测试成功。请回到聊天确认已收到。",
               "base_url": endpoint.removesuffix("/wxsend") + "/skin",
           }
-          request = Request(endpoint, data=json.dumps(payload).encode("utf-8"),
-                            headers={"Content-Type": "application/json", "Authorization": token},
-                            method="POST")
           try:
-              with urlopen(request, timeout=30) as response:
-                  result = json.load(response)
-          except HTTPError as error:
-              body = error.read(8192)
-              try:
-                  reason = json.loads(body).get("msg")
-              except (ValueError, AttributeError):
-                  reason = None
-              if reason == "Invalid token":
-                  raise SystemExit("WXPUSH_TOKEN does not match Worker API_TOKEN") from None
-              if reason == "Failed to get access token":
-                  raise SystemExit("WeChat rejected WX_APPID or WX_SECRET") from None
-              raise SystemExit(f"Push request failed with HTTP {error.code}; response type: " +
-                               ("JSON" if reason else "non-JSON")) from None
-          except (URLError, TimeoutError, ValueError):
+              response = httpx.post(endpoint, json=payload, headers={"Authorization": token}, timeout=30)
+              if response.status_code >= 400:
+                  try:
+                      reason = response.json().get("msg")
+                  except (ValueError, AttributeError):
+                      reason = None
+                  if reason == "Invalid token":
+                      raise SystemExit("WXPUSH_TOKEN does not match Worker API_TOKEN")
+                  if reason == "Failed to get access token":
+                      raise SystemExit("WeChat rejected WX_APPID or WX_SECRET")
+                  raise SystemExit(f"Push request failed with HTTP {response.status_code}; response type: " +
+                                   ("JSON" if reason else "non-JSON"))
+              result = response.json()
+          except (httpx.HTTPError, ValueError):
               raise SystemExit("Push request failed: connection error or invalid response") from None
           if not isinstance(result, dict) or not str(result.get("msg", "")).startswith("Successfully sent messages"):
               raise SystemExit("Push service did not confirm delivery; inspect Worker status")
