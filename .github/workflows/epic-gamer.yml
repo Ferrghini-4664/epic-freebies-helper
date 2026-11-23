@@ -11,6 +11,7 @@ on:
         options:
           - glm
           - gemini
+          - commandcode
   schedule:
     # 每周一 UTC 13:30 运行一次（北京时间周一 21:30）
     - cron: '30 13 * * 1'
@@ -83,6 +84,15 @@ jobs:
        (needs.detect-special.result == 'success' && needs.detect-special.outputs.found == 'true'))
 
     steps:
+      - name: Check Command Code credential
+        if: inputs.provider == 'commandcode'
+        env:
+          COMMANDCODE_API_KEY: ${{ secrets.COMMANDCODE_API_KEY }}
+        run: |
+          if [ -z "$COMMANDCODE_API_KEY" ]; then
+            echo "Add COMMANDCODE_API_KEY to repository Secrets before selecting commandcode."
+            exit 1
+          fi
       - name: Checkout repository
         uses: actions/checkout@v6
 
@@ -131,13 +141,13 @@ jobs:
           WXPUSH_USERID: ${{ secrets.WXPUSH_USERID }}
           WXPUSH_TEMPLATE_ID: ${{ secrets.WXPUSH_TEMPLATE_ID }}
           WXPUSH_BASE_URL: ${{ secrets.WXPUSH_BASE_URL }}
-          LLM_PROVIDER: ${{ inputs.provider || 'glm' }}
+          LLM_PROVIDER: ${{ inputs.provider == 'gemini' && 'gemini' || 'glm' }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_BASE_URL: ""
           GEMINI_MODEL: gemini-2.5-pro
-          GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
-          GLM_BASE_URL: https://open.bigmodel.cn/api/paas/v4
-          GLM_MODEL: glm-4.6v-flash
+          GLM_API_KEY: ${{ inputs.provider == 'commandcode' && secrets.COMMANDCODE_API_KEY || secrets.GLM_API_KEY }}
+          GLM_BASE_URL: ${{ inputs.provider == 'commandcode' && 'https://api.commandcode.ai/provider/v1' || 'https://open.bigmodel.cn/api/paas/v4' }}
+          GLM_MODEL: ${{ inputs.provider == 'commandcode' && 'z-ai/glm-5.3-flash' || 'glm-4.6v-flash' }}
           CHALLENGE_CLASSIFIER_MODEL: ""
           IMAGE_CLASSIFIER_MODEL: ""
           SPATIAL_POINT_REASONER_MODEL: ""

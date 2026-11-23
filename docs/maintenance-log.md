@@ -1464,3 +1464,9 @@
 - User requested the strongest free-tier Gemini 2.5 model.
 - Changed: Manual Gemini route uses gemini-2.5-pro and stops from 2026-12-01 UTC to prevent the announced automatic model migration.
 - Result: Trial pending runtime validation; availability depends on Google project eligibility.
+
+## 2026-11-23 · Command Code GOAT selection
+
+- User requested access through their existing GOAT subscription.
+- Changed: Manual commandcode choice routes the existing GLM-compatible client to the Provider API using a separate COMMANDCODE_API_KEY and z-ai/glm-5.3-flash. Missing credentials stop before setup.
+- Result: Configuration prepared; image input, structured responses and subscription eligibility require a live check after the user supplies the Secret.
