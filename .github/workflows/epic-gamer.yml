@@ -16,12 +16,7 @@ on:
       provider:
         type: string
         default: glm
-  schedule:
-    # 每周一 UTC 13:30 运行一次（北京时间周一 21:30）
-    - cron: '30 13 * * 1'
-    # 北京时间 00:40 主查，12:40 补查。
-    - cron: '40 16 * * *'
-    - cron: '40 4 * * *'
+  # Scheduled claims paused by user on 2026-11-23.
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

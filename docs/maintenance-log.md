@@ -1482,3 +1482,5 @@
 - User requested the official paid visual model and authorized at most CNY 1 for testing.
 - Changed: Added a manual paid-model claim entry and a separate single-request image/JSON probe using GLM_API_KEY.
 - Result: Automatic claim workflow stays disabled; full multi-account paid run requires budget enforcement or further authorization.
+
+- Pause preservation: Removed schedule triggers from the file so future configuration commits cannot reactivate weekly/daily claims. Manual entry points remain available.
