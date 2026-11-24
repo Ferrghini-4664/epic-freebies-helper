@@ -361,6 +361,13 @@ class EpicAgent:
                 logger.exception(e)
                 raise
 
+        # UI completion alone cannot establish ownership for this account and offer.
+        await self.refresh_order_namespaces()
+        order_keys = {(order.namespace, order.offerId) for order in self._orders}
+        unconfirmed = [p.url for p in self._promotions if (p.namespace, p.id) not in order_keys]
+        if unconfirmed:
+            raise RuntimeError("Order history did not confirm promotions: " + ", ".join(unconfirmed))
+
         logger.debug("All tasks in the workflow have been completed")
 
 
@@ -1926,8 +1933,6 @@ class EpicGames:
             "IN LIBRARY",
             "OWNED",
             "ALREADY OWNED",
-            "UNAVAILABLE",
-            "COMING SOON",
             "IN YOUR LIBRARY",
             "OWN THIS GAME",
         ]
@@ -1962,49 +1967,40 @@ class EpicGames:
             # Epic 按钮通常有 'purchase-cta-button' 这个 TestID
             purchase_btn = page.locator("//button[@data-testid='purchase-cta-button']").first
 
-            # 2. 如果没找到主按钮，尝试找“库中”状态
-            try:
-                if not await purchase_btn.is_visible():
-                    # 再次检查是否在库中 (有时按钮不叫 purchase-cta，而是简单的 disabled button)
-                    all_text = (await page.locator("body").text_content() or "").upper()
-                    if any(marker in all_text for marker in owned_markers):
-                        logger.success(
-                            "Game already claimed / already in library (page text scan) - "
-                            f"title='{game_title}' url='{url}'"
-                        )
-                        continue
-                    logger.warning(f"Could not find any purchase button - {url=}")
-                    await self._capture_purchase_debug(page, "button_missing", url)
-                    failed_urls.append(url)
-                    continue
-            except Exception:
-                pass
+            # Missing buttons and unrelated page text cannot establish ownership.
+            if not await purchase_btn.is_visible():
+                logger.warning(f"Purchase button missing; ownership is unconfirmed - {url=}")
+                await self._capture_purchase_debug(page, "button_missing", url)
+                failed_urls.append(url)
+                continue
 
             # 3. 获取按钮上下文
-            btn_text, container_text, disabled, aria_disabled = (
+            btn_text, _container_text, disabled, aria_disabled = (
                 await self._log_purchase_button_context(page, purchase_btn, url)
             )
             btn_text_upper = btn_text.upper()
-            container_text_upper = container_text.upper()
 
             logger.debug(f"👉 Found Button: '{btn_text}'")
 
-            # 4. 黑名单检查：只有这些情况绝对不能点
-            # 如果是 'IN LIBRARY', 'OWNED', 'UNAVAILABLE', 'COMING SOON' -> 跳过
-            if disabled is not None or aria_disabled == "true":
-                logger.success(
-                    "Game already claimed / unavailable (purchase button disabled) - "
+            # A visible ownership label is provisional until order-history verification.
+            if " ".join(btn_text_upper.split()) in owned_markers:
+                logger.info(
+                    "Purchase button suggests ownership; awaiting order verification - "
+                    f"title='{game_title}' text='{btn_text}' url='{url}'"
+                )
+                continue
+
+            if (
+                disabled is not None
+                or aria_disabled == "true"
+                or " ".join(btn_text_upper.split()) in {"UNAVAILABLE", "COMING SOON"}
+            ):
+                logger.warning(
+                    "Purchase unavailable; ownership is unconfirmed - "
                     f"title='{game_title}' text='{btn_text}' url='{url}'"
                 )
                 await self._capture_purchase_debug(page, "button_disabled", url)
-                continue
-
-            if any(marker in btn_text_upper for marker in owned_markers) or any(
-                marker in container_text_upper for marker in owned_markers
-            ):
-                logger.success(
-                    f"Game already claimed / already in library - title='{game_title}' text='{btn_text}' url='{url}'"
-                )
+                failed_urls.append(url)
                 continue
 
             # 5. 白名单检查 (Add to Cart 特殊处理)
@@ -2163,4 +2159,4 @@ class EpicGames:
                 ", ".join(recovered_urls),
             )
         elif not has_cart_items:
-            logger.success("🎉 Process completed (No cart items pending)")
+            logger.info("No cart items pending; awaiting account order-history verification")

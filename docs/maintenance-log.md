@@ -1540,3 +1540,12 @@
 - Changed: Shared workflow sets EPIC_RETRY_FAILED_ACCOUNTS=false. The catalog detector considers only short promotion/account windows absent from the ledger; it ignores pending weekly and previously attempted daily failures. A second daily catalog check can discover a new window without rerunning the same recorded window.
 - Result: Production keeps Monday 21:30 regular claims and special-event daily/new-window claims. Retry implementation remains available behind the flag, and manual dispatch remains available. Existing in-flight runs are untouched.
 - Validation: Added a production-mode simulation for no midday retry after a daily failure, no weekly failure retry, and triggering on the next new short offer.
+
+## 2026-11-24 · Reject unverified ownership and successful empty-cart results
+
+- Symptom: Run 45322004118 skipped Mark of the Deep for accounts 2–4 as already owned although the user confirmed it was absent.
+- Root cause: Missing purchase buttons triggered a whole-body substring scan including hidden/unrelated text and unavailable/coming-soon markers; normal return was treated as success. Cross-account contamination is not established.
+- Changed files: app/services/epic_games_service.py and this log. Removed whole-page ownership fallback, require exact ownership button labels, record missing/disabled/unavailable buttons as unconfirmed with diagnostics, and require fresh completed-order namespace plus offer ID evidence after collection regardless of notification/claim-state configuration. Empty-cart completion is now provisional.
+- Result: Unconfirmed ownership fails instead of reporting successful account completion. A delayed order-history update may conservatively leave a genuine claim unconfirmed. Isolated fix for easier upstream reconciliation.
+- Validation: Static checks only; no tests, browser claiming, model requests or workflow dispatch. Automatic claiming must remain paused.
+- Pause verification: GitHub workflow was active when inspected; disabled it under the current user instruction and verified the disabled banner. Existing cron definitions are retained for a future explicitly authorized resume.
