@@ -1,0 +1,9 @@
+name: Epic Claim - GLM 4.6V Paid
+on:
+  workflow_dispatch:
+jobs:
+  claim:
+    uses: ./.github/workflows/epic-gamer.yml
+    with:
+      provider: glm-paid
+    secrets: inherit

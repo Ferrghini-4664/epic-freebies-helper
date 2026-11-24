@@ -1,0 +1,47 @@
+name: Test GLM 4.6V Paid connection
+on:
+  workflow_dispatch:
+permissions: {}
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - run: python -m pip install httpx==0.28.1
+      - name: One small image request
+        env:
+          GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
+        shell: python
+        run: |
+          import json
+          import os
+          import httpx
+
+          image_data = "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAF0lEQVR4nGP4z8BAEiJN9aiGUQ1DSgMAkPn/Afnh+ngAAAAASUVORK5CYII="
+          key = os.environ["GLM_API_KEY"].strip()
+          if not key:
+              raise SystemExit("Missing GLM_API_KEY")
+          payload = {
+              "model": "glm-4.6v",
+              "max_tokens": 64,
+              "thinking": {"type": "disabled"},
+              "response_format": {"type": "json_object"},
+              "messages": [{"role": "user", "content": [
+                  {"type": "text", "text": 'Identify the solid image color. Return JSON with key "color".'},
+                  {"type": "image_url", "image_url": {"url": "data:image/png;base64," + image_data}},
+              ]}],
+          }
+          try:
+              response = httpx.post("https://open.bigmodel.cn/api/paas/v4/chat/completions",
+                                    json=payload, headers={"Authorization": "Bearer " + key}, timeout=50)
+              if response.is_error:
+                  raise SystemExit(f"GLM probe failed with HTTP {response.status_code}")
+              body = response.json()
+              answer = json.loads(body["choices"][0]["message"]["content"])
+              if "red" not in str(answer.get("color", "")).lower() and "红" not in str(answer.get("color", "")):
+                  raise SystemExit("Image answer did not match the red fixture")
+          except (httpx.HTTPError, ValueError, KeyError, IndexError):
+              raise SystemExit("GLM probe failed: connection or response format") from None
+          print("GLM 4.6V image input and JSON response confirmed")
+          usage = body.get("usage", {})
+          print("Usage:", json.dumps({k: usage.get(k) for k in ("prompt_tokens", "completion_tokens", "total_tokens")}))

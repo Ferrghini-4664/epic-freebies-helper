@@ -1476,3 +1476,9 @@
 - User requested a dedicated GOAT button alongside the original GLM/Gemini selection.
 - Changed: commandcode-claim.yml calls the shared claim workflow with the commandcode provider. Original dispatch offers GLM and Gemini; Gemini routes to gemini-3.8-flash. Removed the obsolete 2.5 retirement cutoff.
 - Result: Both entry points share the existing claim concurrency group, credentials and notification flow.
+
+## 2026-11-24 · GLM 4.6V paid trial
+
+- User requested the official paid visual model and authorized at most CNY 1 for testing.
+- Changed: Added a manual paid-model claim entry and a separate single-request image/JSON probe using GLM_API_KEY.
+- Result: Automatic claim workflow stays disabled; full multi-account paid run requires budget enforcement or further authorization.
