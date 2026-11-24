@@ -1484,3 +1484,10 @@
 - Result: Automatic claim workflow stays disabled; full multi-account paid run requires budget enforcement or further authorization.
 
 - Pause preservation: Removed schedule triggers from the file so future configuration commits cannot reactivate weekly/daily claims. Manual entry points remain available.
+
+## 2026-11-24 · Extend multi-account claim timeout
+
+- Symptom: Sequential multi-account claims can exceed the configured 60-minute limit.
+- Cause: Shared claim job defaulted to 60 minutes despite GitHub-hosted runners allowing up to 6 hours.
+- Changed: .github/workflows/epic-gamer.yml defaults JOB_TIMEOUT_MINUTES to 360.
+- Result: All manual model entry points inherit the extended timeout. Automatic schedule triggers remain absent. No claim or API invocation was started.

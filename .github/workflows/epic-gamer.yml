@@ -73,8 +73,8 @@ jobs:
     # A single account run can take 15-20 minutes. Multi-account runs are
     # sequential, so scale the timeout with the number of accounts by setting
     # a repository variable JOB_TIMEOUT_MINUTES (Settings -> Secrets and
-    # variables -> Actions -> Variables). Defaults to 60 minutes.
-    timeout-minutes: ${{ fromJSON(vars.JOB_TIMEOUT_MINUTES || '60') }}
+    # variables -> Actions -> Variables). Defaults to 360 minutes (GitHub-hosted runner maximum).
+    timeout-minutes: ${{ fromJSON(vars.JOB_TIMEOUT_MINUTES || '360') }}
 
     # 默认不在主仓库自身执行定时任务；Fork 后的仓库会正常运行。
     if: >-
