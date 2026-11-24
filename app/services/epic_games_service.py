@@ -307,8 +307,9 @@ class EpicAgent:
         await self._sync_order_history()
         self._namespaces = self._namespaces or [order.namespace for order in self._orders]
         all_promotions = get_promotions()
-        claimed_promotions = [p for p in all_promotions if p.namespace in self._namespaces]
-        self._promotions = [p for p in all_promotions if p.namespace not in self._namespaces]
+        order_keys = {(order.namespace, order.offerId) for order in self._orders}
+        claimed_promotions = [p for p in all_promotions if (p.namespace, p.id) in order_keys]
+        self._promotions = [p for p in all_promotions if (p.namespace, p.id) not in order_keys]
 
         for promotion in claimed_promotions:
             logger.success(

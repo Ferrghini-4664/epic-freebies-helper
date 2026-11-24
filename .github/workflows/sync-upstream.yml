@@ -55,6 +55,7 @@ jobs:
         run: |
           uv sync --locked --python 3.12 --no-dev
           uv run --no-sync python "$RUNNER_TEMP/check_sync_compatibility.py"
+          uv run --no-sync python -m unittest discover -s tests -p test_claim_retry_state.py
 
   publish:
     needs: validate

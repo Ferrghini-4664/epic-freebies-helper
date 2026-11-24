@@ -1491,3 +1491,12 @@
 - Cause: Shared claim job defaulted to 60 minutes despite GitHub-hosted runners allowing up to 6 hours.
 - Changed: .github/workflows/epic-gamer.yml defaults JOB_TIMEOUT_MINUTES to 360.
 - Result: All manual model entry points inherit the extended timeout. Automatic schedule triggers remain absent. No claim or API invocation was started.
+
+## 2026-11-24 · Persist confirmed claims and retry pending accounts
+
+- Symptom: Midday checks reran successful accounts, and weekly account failures had no cross-run retry record.
+- Cause: Every workflow started with empty local state and the ownership filter used namespace alone.
+- Changed: app/claim_state.py persists hashed account and promotion-window keys with atomic writes. deploy.py registers all accounts before starting, skips confirmed windows, checkpoints exact namespace/offer IDs from fresh orders even after a collection exception, and retains incomplete verification as pending. The collector now distinguishes offers sharing a namespace. Public detection includes due weekly retries and skips short events confirmed for all configured accounts.
+- Workflow: Restore/save a shared GitHub Actions cache under the existing claim concurrency group, including save attempts on failure/cancellation. Ordinary attempts have a four-hour automatic cooldown and Epic rate limits have a 24-hour cooldown. Expired promotions stop retrying. Missing/evicted state can cause rechecks; confirmed order checks still protect against duplicate purchases. Automatic claim schedules remain absent.
+- Validation: Eleven offline simulations passed for daily and weekly campaigns, partial confirmation, a later giveaway of the same game, added/removed accounts, cooldowns, malformed state, restart persistence, and normal multi-account entry. Sync compatibility also runs these regressions.
+- Scope: No real account login, model call, notification or automated claim was started.

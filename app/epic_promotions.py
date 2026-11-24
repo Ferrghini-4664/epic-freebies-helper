@@ -1,3 +1,5 @@
+import hashlib
+import json
 from datetime import datetime, timedelta, timezone
 
 URL_PROMOTIONS = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions"
@@ -21,7 +23,13 @@ def active_free_offers(payload, now=None):
                     start = datetime.fromisoformat(offer["startDate"])
                     end = datetime.fromisoformat(offer["endDate"])
                     if start <= now < end:
-                        yield game, end - start
+                        window = [game["namespace"], game["id"],
+                                  start.astimezone(timezone.utc).isoformat(),
+                                  end.astimezone(timezone.utc).isoformat()]
+                        enriched = dict(game)
+                        enriched["claim_key"] = hashlib.sha256(json.dumps(window).encode()).hexdigest()
+                        enriched["claim_end"] = end.astimezone(timezone.utc).isoformat()
+                        yield enriched, end - start
                 except (KeyError, TypeError, ValueError):
                     continue
 

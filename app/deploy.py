@@ -12,6 +12,7 @@ using browser automation and scheduling capabilities.
 
 import asyncio
 import json
+import os
 import signal
 from contextlib import suppress
 from datetime import datetime
@@ -21,11 +22,12 @@ from apscheduler.triggers.cron import CronTrigger
 from loguru import logger
 from pytz import timezone
 
+from claim_state import ClaimState
 from accounts import get_epic_accounts_raw, mask_email, parse_multi_accounts, swap_account
 from services.epic_authorization_service import EpicAuthorization
 from services.browser_context import open_browser_context, resolve_headless_mode
 from services.epic_collection_summary_service import collect_epic_games_with_summary
-from services.epic_games_service import EpicAgent, EpicFreeGameRateLimitError
+from services.epic_games_service import EpicAgent, EpicFreeGameRateLimitError, get_promotions
 from services.telegram_notification_service import (
     failure_summary_from_exception,
     send_collection_summary_to_telegram,
@@ -49,6 +51,17 @@ init_log(
 # Default timezone for scheduling operations
 TIMEZONE = timezone("Asia/Shanghai")
 RATE_LIMITED_OUTCOME = "rate_limited"
+UNCONFIRMED_OUTCOME = "unconfirmed"
+CLAIM_STATE = ClaimState(os.environ["EPIC_CLAIM_STATE_PATH"]) if os.getenv("EPIC_CLAIM_STATE_PATH") else None
+CLAIM_TARGETS = None
+
+
+def _prepare_claim_state(emails):
+    global CLAIM_TARGETS
+    if CLAIM_STATE is not None and CLAIM_TARGETS is None:
+        CLAIM_TARGETS = get_promotions()
+        CLAIM_STATE.register(emails, CLAIM_TARGETS)
+
 
 
 def _is_free_game_rate_limit_error(err: Exception) -> bool:
@@ -65,7 +78,9 @@ def _is_free_game_rate_limit_error(err: Exception) -> bool:
 
 
 @logger.catch(reraise=True)
-async def execute_browser_tasks(headless: bool | str = True, *, collect_summary: bool = False):
+async def execute_browser_tasks(
+    headless: bool | str = True, *, collect_summary: bool = False, pending_promotions=None
+):
     """
     Execute Epic Games free game collection tasks using browser automation.
 
@@ -95,11 +110,21 @@ async def execute_browser_tasks(headless: bool | str = True, *, collect_summary:
         logger.debug("Starting free games collection process")
         game_page = await browser.new_page()
         agent = EpicAgent(game_page)
-        if collect_summary:
-            summary = await collect_epic_games_with_summary(agent)
-        else:
-            await agent.collect_epic_games()
-            summary = None
+        try:
+            if collect_summary:
+                summary = await collect_epic_games_with_summary(agent)
+            else:
+                await agent.collect_epic_games()
+                summary = None
+        finally:
+            if CLAIM_STATE is not None and pending_promotions:
+                # An exit code or a namespace match alone cannot confirm an offer.
+                try:
+                    await agent.refresh_order_namespaces()
+                    order_keys = {(order.namespace, order.offerId) for order in agent._orders}
+                    CLAIM_STATE.confirm(settings.EPIC_EMAIL, pending_promotions, order_keys)
+                except Exception as error:
+                    logger.warning("Claim verification unavailable | error_type={}", type(error).__name__)
         logger.debug("Free games collection completed")
 
         # Cleanup browser resources
@@ -123,6 +148,18 @@ async def _deliver_collection_summary(summary, *, account_label: str | None = No
 async def execute_browser_tasks_with_notification(
     headless: bool | str = True, *, account_label: str | None = None
 ) -> str | None:
+    pending_promotions = None
+    if CLAIM_STATE is not None:
+        _prepare_claim_state([settings.EPIC_EMAIL])
+        pending_promotions = CLAIM_STATE.pending(
+            settings.EPIC_EMAIL, CLAIM_TARGETS,
+            automatic=os.getenv("EPIC_RETRY_ONLY") == "true",
+        )
+        if not pending_promotions:
+            logger.info("Skipping account: no unconfirmed active offers due for retry")
+            return None
+        CLAIM_STATE.attempted(settings.EPIC_EMAIL, pending_promotions)
+
     if configuration_error := settings.llm_configuration_error:
         logger.error(configuration_error)
         raise RuntimeError(configuration_error)
@@ -138,10 +175,14 @@ async def execute_browser_tasks_with_notification(
             enabled_channels.append("WXPush")
         logger.debug("Notification channel(s) enabled: {}", ", ".join(enabled_channels))
 
+    browser_options = {
+        "headless": headless,
+        "collect_summary": notifications_enabled or CLAIM_STATE is not None,
+    }
+    if CLAIM_STATE is not None:
+        browser_options["pending_promotions"] = pending_promotions
     try:
-        summary = await execute_browser_tasks(
-            headless=headless, collect_summary=notifications_enabled
-        )
+        summary = await execute_browser_tasks(**browser_options)
     except Exception as err:
         # Notify first, then decide whether this failure is a rate limit — the
         # rate-limited outcome must not swallow the failure notification.
@@ -154,11 +195,23 @@ async def execute_browser_tasks_with_notification(
                 "Epic 24-hour free-game limit detected; ending this run without retry. "
                 "No successful claim was confirmed for the affected account."
             )
+            if CLAIM_STATE is not None:
+                CLAIM_STATE.attempted(settings.EPIC_EMAIL, pending_promotions, hours=24)
             return RATE_LIMITED_OUTCOME
         raise
 
+    if CLAIM_STATE is not None:
+        remaining = CLAIM_STATE.pending(settings.EPIC_EMAIL, pending_promotions)
+        if remaining and summary is not None:
+            summary.unconfirmed_promotions = remaining
+            summary.error_message = summary.error_message or "Order history did not confirm all active offers"
     if notifications_enabled:
         await _deliver_collection_summary(summary, account_label=account_label)
+    if CLAIM_STATE is not None and CLAIM_STATE.pending(
+        settings.EPIC_EMAIL, pending_promotions
+    ):
+        logger.warning("Account still has unconfirmed offers; retry remains pending")
+        return UNCONFIRMED_OUTCOME
     return None
 
 
@@ -166,6 +219,7 @@ async def execute_multiple_accounts(
     accounts: list[tuple[str, str]], headless: bool | str = True
 ) -> None:
     """Run collection for an explicitly enabled, fully valid multi-account list."""
+    _prepare_claim_state([email for email, _ in accounts])
     total = len(accounts)
     succeeded = 0
     rate_limited_accounts: list[str] = []
@@ -191,6 +245,8 @@ async def execute_multiple_accounts(
                     total,
                     masked_email,
                 )
+            elif outcome == UNCONFIRMED_OUTCOME:
+                failed_accounts.append(masked_email)
             else:
                 succeeded += 1
                 logger.success("Account {}/{} completed: {}", index, total, masked_email)
@@ -233,7 +289,9 @@ async def _run_accounts(headless: bool | str = True) -> None:
 
     if not raw:
         # Preserve the exact legacy single-account execution path.
-        await execute_browser_tasks_with_notification(headless=headless)
+        outcome = await execute_browser_tasks_with_notification(headless=headless)
+        if outcome == UNCONFIRMED_OUTCOME:
+            raise RuntimeError("Active offers remain unconfirmed")
         return
 
     accounts, invalid_lines = parse_multi_accounts(raw)
@@ -249,7 +307,9 @@ async def _run_accounts(headless: bool | str = True) -> None:
         logger.warning(
             "No valid EPIC_ACCOUNTS entries; using the legacy single-account configuration"
         )
-        await execute_browser_tasks_with_notification(headless=headless)
+        outcome = await execute_browser_tasks_with_notification(headless=headless)
+        if outcome == UNCONFIRMED_OUTCOME:
+            raise RuntimeError("Active offers remain unconfirmed")
         return
 
     if invalid_lines:

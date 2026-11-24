@@ -27,6 +27,8 @@ class CompletedOrder(BaseModel):
 
 
 class PromotionGame(BaseModel):
+    claim_key: str = ""
+    claim_end: str = ""
     title: str
     id: str
     namespace: str

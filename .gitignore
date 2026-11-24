@@ -141,3 +141,5 @@ app/volumes
 .claude/
 .DS_Store
 .forensics/
+
+.claim-state/
