@@ -97,6 +97,16 @@ class ClaimState:
                 records[game.claim_key]["retry_after"] = ""
         self.save()
 
+    def all_confirmed(self, email, promotions, now=None):
+        now = now or utcnow()
+        records = self.data.get(account_key(email), {})
+        return bool(promotions) and all(
+            game.claim_key in records
+            and records[game.claim_key]["confirmed"]
+            and datetime.fromisoformat(records[game.claim_key]["end"]) > now
+            for game in promotions
+        )
+
     def needs_short_claim(self, emails, promotions, now=None):
         now = now or utcnow()
         for email in emails:

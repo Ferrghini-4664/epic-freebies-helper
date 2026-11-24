@@ -22,7 +22,7 @@ from apscheduler.triggers.cron import CronTrigger
 from loguru import logger
 from pytz import timezone
 
-from claim_state import ClaimState
+from claim_state import ClaimState, account_key
 from accounts import get_epic_accounts_raw, mask_email, parse_multi_accounts, swap_account
 from services.epic_authorization_service import EpicAuthorization
 from services.browser_context import open_browser_context, resolve_headless_mode
@@ -164,7 +164,10 @@ async def execute_browser_tasks_with_notification(
         if not pending_promotions:
             logger.info("Skipping account: no unconfirmed active offers due for retry")
             if wxpush_results is not None:
-                wxpush_results.append({"account": account_label, "summary": None, "status": "跳过"})
+                wxpush_results.append({
+                    "account": account_label, "summary": None, "status": "跳过",
+                    "all_previously_owned": CLAIM_STATE.all_confirmed(settings.EPIC_EMAIL, CLAIM_TARGETS),
+                })
             return None
         CLAIM_STATE.attempted(settings.EPIC_EMAIL, pending_promotions)
 
@@ -236,6 +239,7 @@ async def execute_multiple_accounts(
     rate_limited_accounts: list[str] = []
     failed_accounts: list[str] = []
     wxpush_results: list[dict] = []
+    stop_after_two = os.getenv("EPIC_STOP_AFTER_TWO_OWNED") == "true"
 
     for index, (email, password) in enumerate(accounts, 1):
         masked_email = mask_email(email)
@@ -275,7 +279,33 @@ async def execute_multiple_accounts(
 
         if len(wxpush_results) == result_start:
             wxpush_results.append({"account": masked_email, "summary": None})
-        wxpush_results[-1].setdefault("status", status)
+        row = wxpush_results[-1]
+        row.setdefault("status", status)
+        summary = row.get("summary")
+        if summary is not None:
+            row["all_previously_owned"] = (
+                summary.all_previously_owned
+                and bool(summary.all_promotions)
+                and not summary.newly_claimed_promotions
+                and not summary.unconfirmed_promotions
+                and not summary.failed_promotions
+                and not summary.error_message
+            )
+        if (
+            stop_after_two and index == 2 and total > 2
+            and account_key(accounts[0][0]) != account_key(accounts[1][0])
+            and all(
+                result.get("all_previously_owned")
+                and result["status"] in {"成功", "跳过"}
+                for result in wxpush_results[:2]
+            )
+        ):
+            logger.info("First two accounts already own all active offers; skipping remaining accounts by configured rule")
+            wxpush_results.extend(
+                {"account": mask_email(other_email), "summary": None, "status": "按规则跳过"}
+                for other_email, _ in accounts[index:]
+            )
+            break
 
     if wxpush_notifications_enabled():
         await send_batch_summary_to_wxpush(wxpush_results)
@@ -297,6 +327,8 @@ async def execute_multiple_accounts(
             "Run ended without retry for rate-limited account(s): {}",
             ", ".join(rate_limited_accounts),
         )
+    elif any(result["status"] == "按规则跳过" for result in wxpush_results):
+        logger.info("Remaining accounts were skipped under the first-two-owned rule")
     else:
         logger.success("All {} account(s) completed successfully", total)
 

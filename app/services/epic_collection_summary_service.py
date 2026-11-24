@@ -9,6 +9,7 @@ from services.epic_games_service import EpicAgent, EpicFreeGameRateLimitError, g
 
 
 class CollectionSummary(BaseModel):
+    all_previously_owned: bool = False
     all_promotions: list[PromotionGame] = Field(default_factory=list)
     newly_claimed_promotions: list[PromotionGame] = Field(default_factory=list)
     previously_claimed_promotions: list[PromotionGame] = Field(default_factory=list)
@@ -80,6 +81,14 @@ async def collect_epic_games_with_summary(agent: EpicAgent) -> CollectionSummary
         before_namespaces = None
         summary_errors.append(f"pre-collection order snapshot unavailable: {type(err).__name__}")
 
+    before_order_keys = {
+        (order.namespace, order.offerId) for order in getattr(agent, "_orders", [])
+    }
+    all_previously_owned = bool(all_promotions) and before_namespaces is not None and all(
+        (promotion.namespace, promotion.id) in before_order_keys
+        for promotion in all_promotions
+    )
+
     if before_namespaces is None:
         previously_claimed: list[PromotionGame] = []
         pending_promotions = all_promotions
@@ -98,6 +107,7 @@ async def collect_epic_games_with_summary(agent: EpicAgent) -> CollectionSummary
     except Exception as err:
         if isinstance(err, EpicFreeGameRateLimitError):
             summary = CollectionSummary(
+                all_previously_owned=all_previously_owned,
                 all_promotions=all_promotions,
                 previously_claimed_promotions=previously_claimed,
                 unconfirmed_promotions=pending_promotions,
@@ -116,6 +126,7 @@ async def collect_epic_games_with_summary(agent: EpicAgent) -> CollectionSummary
                 f"post-error order snapshot unavailable: {type(snapshot_err).__name__}"
             )
             summary = CollectionSummary(
+                all_previously_owned=all_previously_owned,
                 all_promotions=all_promotions,
                 previously_claimed_promotions=previously_claimed,
                 unconfirmed_promotions=pending_promotions,
@@ -133,6 +144,7 @@ async def collect_epic_games_with_summary(agent: EpicAgent) -> CollectionSummary
                 else all_promotions
             )
             summary = CollectionSummary(
+                all_previously_owned=all_previously_owned,
                 all_promotions=all_promotions,
                 newly_claimed_promotions=newly_claimed,
                 previously_claimed_promotions=previously_claimed,
@@ -150,6 +162,7 @@ async def collect_epic_games_with_summary(agent: EpicAgent) -> CollectionSummary
         )
         message = f"Failed to refresh Epic order history after collection: {type(err).__name__}"
         summary = CollectionSummary(
+            all_previously_owned=all_previously_owned,
             all_promotions=all_promotions,
             previously_claimed_promotions=previously_claimed,
             unconfirmed_promotions=pending_promotions,
@@ -159,6 +172,7 @@ async def collect_epic_games_with_summary(agent: EpicAgent) -> CollectionSummary
 
     if before_namespaces is None:
         return CollectionSummary(
+            all_previously_owned=all_previously_owned,
             all_promotions=all_promotions,
             unconfirmed_promotions=all_promotions,
             error_message="; ".join(summary_errors),
@@ -168,6 +182,7 @@ async def collect_epic_games_with_summary(agent: EpicAgent) -> CollectionSummary
     unconfirmed_promotions = _promotions_missing_from_snapshot(pending_promotions, after_namespaces)
 
     return CollectionSummary(
+        all_previously_owned=all_previously_owned,
         all_promotions=all_promotions,
         newly_claimed_promotions=newly_claimed,
         previously_claimed_promotions=previously_claimed,

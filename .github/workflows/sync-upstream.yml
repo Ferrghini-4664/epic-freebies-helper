@@ -57,6 +57,7 @@ jobs:
           uv run --no-sync python "$RUNNER_TEMP/check_sync_compatibility.py"
           uv run --no-sync python -m unittest discover -s tests -p test_claim_retry_state.py
           uv run --no-sync python -m unittest discover -s tests -p test_wxpush_batch.py
+          uv run --no-sync python -m unittest discover -s tests -p test_first_two_owned.py
 
   publish:
     needs: validate

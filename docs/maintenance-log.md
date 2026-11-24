@@ -1516,3 +1516,12 @@
 - Changed: Reinstated Monday 21:30 Beijing full claim and daily 00:40/12:40 detection and retry schedules. Scheduled claim calls route to official glm-4.6v, matching the user's successful manual trial.
 - Result: Existing run is untouched; subsequent runs use the updated workflow and shared claim concurrency/state. Manual GLM Flash, Gemini, Command Code and paid GLM entry points retain their routing.
 - Billing constraint: User intends consumption of new-user grants only. API success does not establish grant source or remaining eligibility; the workflow cannot enforce cash-versus-grant billing.
+
+## 2026-11-24 · First-two-owned shortcut for the user's synchronized account group
+
+- User confirmed that the configured accounts are manually claimed together, so the first two owned accounts represent the group.
+- Changed: Enabled EPIC_STOP_AFTER_TWO_OWNED in the shared workflow. The loop stops after the first two distinct configured accounts both confirm all current offers were owned before this attempt. Fresh order offer IDs or confirmed cached windows are required. Newly claimed, failed, unconfirmed and empty promotion results do not qualify.
+- Result: Remaining accounts are reported as skipped by rule, never written as confirmed claims. The public detector honors the same first-two cached condition, so pending records for other accounts do not repeatedly start the same campaign. New windows or games invalidate the shortcut.
+- Validation: Six offline shortcut tests passed. Daily/weekly retry and aggregate WeChat regressions are rerun, and upstream sync includes the shortcut tests.
+- Limit: Skipping the remaining accounts relies on the user's synchronized-account assumption. A divergence in those accounts can leave an offer unclaimed.
+- Scope: Current in-flight runs keep their original code; no live claim or model call was started.

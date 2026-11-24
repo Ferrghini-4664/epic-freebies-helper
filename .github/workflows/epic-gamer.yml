@@ -23,6 +23,7 @@ on:
     - cron: '40 4 * * *'
 
 env:
+  EPIC_STOP_AFTER_TWO_OWNED: 'true'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:

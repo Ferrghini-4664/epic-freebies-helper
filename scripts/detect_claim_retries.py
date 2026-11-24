@@ -8,13 +8,19 @@ from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from claim_state import ClaimState
+from claim_state import ClaimState, account_key
 from epic_promotions import PROMOTION_PARAMS, URL_PROMOTIONS, active_free_offers
 
 
 def should_claim(payload, state, emails, now=None):
     active = list(active_free_offers(payload, now))
     promotions = [SimpleNamespace(**game) for game, _ in active]
+    if (
+        os.getenv("EPIC_STOP_AFTER_TWO_OWNED") == "true" and len(emails) >= 2
+        and account_key(emails[0]) != account_key(emails[1])
+        and all(state.all_confirmed(email, promotions, now) for email in emails[:2])
+    ):
+        return False
     short = [SimpleNamespace(**game) for game, duration in active if duration <= timedelta(hours=48)]
     return state.needs_short_claim(emails, short, now) or state.has_due_retry(
         promotions, now, emails=emails
