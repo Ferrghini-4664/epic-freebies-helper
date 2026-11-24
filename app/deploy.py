@@ -239,7 +239,7 @@ async def execute_multiple_accounts(
     rate_limited_accounts: list[str] = []
     failed_accounts: list[str] = []
     wxpush_results: list[dict] = []
-    stop_after_two = os.getenv("EPIC_STOP_AFTER_TWO_OWNED") == "true"
+    stop_on_owned_quorum = os.getenv("EPIC_STOP_IF_TWO_OF_THREE_OWNED") == "true"
 
     for index, (email, password) in enumerate(accounts, 1):
         masked_email = mask_email(email)
@@ -291,16 +291,14 @@ async def execute_multiple_accounts(
                 and not summary.failed_promotions
                 and not summary.error_message
             )
-        if (
-            stop_after_two and index == 2 and total > 2
-            and account_key(accounts[0][0]) != account_key(accounts[1][0])
-            and all(
-                result.get("all_previously_owned")
-                and result["status"] in {"成功", "跳过"}
-                for result in wxpush_results[:2]
-            )
-        ):
-            logger.info("First two accounts already own all active offers; skipping remaining accounts by configured rule")
+        owned_accounts = {
+            account_key(accounts[position][0])
+            for position, result in enumerate(wxpush_results[:3])
+            if result.get("all_previously_owned")
+            and result["status"] in {"成功", "跳过"}
+        }
+        if stop_on_owned_quorum and index <= 3 and index < total and len(owned_accounts) >= 2:
+            logger.info("Two of the first three accounts already own all active offers; skipping remaining accounts by configured rule")
             wxpush_results.extend(
                 {"account": mask_email(other_email), "summary": None, "status": "按规则跳过"}
                 for other_email, _ in accounts[index:]
@@ -328,7 +326,7 @@ async def execute_multiple_accounts(
             ", ".join(rate_limited_accounts),
         )
     elif any(result["status"] == "按规则跳过" for result in wxpush_results):
-        logger.info("Remaining accounts were skipped under the first-two-owned rule")
+        logger.info("Remaining accounts were skipped under the two-of-three-owned rule")
     else:
         logger.success("All {} account(s) completed successfully", total)
 

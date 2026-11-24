@@ -107,7 +107,7 @@ class ClaimState:
             for game in promotions
         )
 
-    def needs_short_claim(self, emails, promotions, now=None):
+    def needs_short_claim(self, emails, promotions, now=None, *, retry_failed=True):
         now = now or utcnow()
         for email in emails:
             records = self.data.get(account_key(email), {})
@@ -115,7 +115,7 @@ class ClaimState:
                 record = records.get(game.claim_key)
                 if record is None:
                     return True
-                if not record["confirmed"]:
+                if retry_failed and not record["confirmed"]:
                     after = record.get("retry_after")
                     if not after or datetime.fromisoformat(after) <= now:
                         return True

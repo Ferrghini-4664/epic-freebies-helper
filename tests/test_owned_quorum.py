@@ -28,20 +28,20 @@ def owned():
     )
 
 
-class FirstTwoOwnedTest(unittest.IsolatedAsyncioTestCase):
-    async def batch(self, first, second, enabled=True):
+class OwnedQuorumTest(unittest.IsolatedAsyncioTestCase):
+    async def batch(self, first, second, third=None, enabled=True, duplicate=False):
         calls = []
         rows = []
 
         async def execute(**kwargs):
             index = len(calls)
             calls.append(index)
-            result = [first, second][index] if index < 2 else owned()
+            result = [first, second, third or owned()][index] if index < 3 else owned()
             if isinstance(result, Exception):
                 raise result
             return result
 
-        with patch.dict(os.environ, {"EPIC_STOP_AFTER_TWO_OWNED": str(enabled).lower()}), patch.object(
+        with patch.dict(os.environ, {"EPIC_STOP_IF_TWO_OF_THREE_OWNED": str(enabled).lower()}), patch.object(
             deploy, "CLAIM_STATE", None
         ), patch.object(
             deploy, "settings", SimpleNamespace(llm_configuration_error=None)
@@ -55,10 +55,13 @@ class FirstTwoOwnedTest(unittest.IsolatedAsyncioTestCase):
             side_effect=lambda error: summaries.CollectionSummary(error_message=str(error))
         ), patch.object(deploy, "execute_browser_tasks", side_effect=execute):
             accounts = [(f"fixture{index}@example.invalid", "fixture-password") for index in range(8)]
+            if duplicate:
+                accounts[1] = accounts[0]
+                accounts[2] = accounts[0]
             try:
                 await deploy.execute_multiple_accounts(accounts)
             except RuntimeError:
-                if not isinstance(first, Exception) and not isinstance(second, Exception):
+                if not any(isinstance(value, Exception) for value in (first, second, third)):
                     raise
         return calls, rows
 
@@ -70,20 +73,38 @@ class FirstTwoOwnedTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_new_claim_does_not_trigger_shortcut(self):
         newly = summaries.CollectionSummary(all_promotions=[GAME], newly_claimed_promotions=[GAME])
-        calls, _ = await self.batch(owned(), newly)
+        calls, _ = await self.batch(owned(), newly, newly)
         self.assertEqual(8, len(calls))
 
     async def test_failure_or_unconfirmed_does_not_trigger_shortcut(self):
         for second in (RuntimeError("fixture failure"), summaries.CollectionSummary(
             all_promotions=[GAME], unconfirmed_promotions=[GAME]
         )):
-            calls, _ = await self.batch(owned(), second)
+            calls, _ = await self.batch(owned(), second, summaries.CollectionSummary())
             self.assertEqual(8, len(calls))
 
     async def test_empty_snapshot_or_disabled_setting_keeps_all_accounts(self):
-        calls, _ = await self.batch(owned(), summaries.CollectionSummary())
+        calls, _ = await self.batch(owned(), summaries.CollectionSummary(), summaries.CollectionSummary())
         self.assertEqual(8, len(calls))
         calls, _ = await self.batch(owned(), owned(), enabled=False)
+        self.assertEqual(8, len(calls))
+
+    async def test_any_two_of_first_three_preowned_skip_remaining_five(self):
+        for missing in range(3):
+            results = [owned(), owned(), owned()]
+            results[missing] = summaries.CollectionSummary()
+            calls, rows = await self.batch(*results)
+            self.assertEqual(2 if missing == 2 else 3, len(calls))
+            self.assertTrue(all(row["status"] == "按规则跳过" for row in rows[len(calls):]))
+
+    async def test_failed_first_account_can_be_outvoted_by_next_two(self):
+        calls, rows = await self.batch(RuntimeError("fixture region restriction"), owned(), owned())
+        self.assertEqual(3, len(calls))
+        self.assertEqual("失败", rows[0]["status"])
+        self.assertEqual(["按规则跳过"] * 5, [row["status"] for row in rows[3:]])
+
+    async def test_duplicate_credentials_do_not_count_as_distinct_accounts(self):
+        calls, _ = await self.batch(owned(), owned(), owned(), duplicate=True)
         self.assertEqual(8, len(calls))
 
     async def test_exact_pre_run_orders_are_required(self):
@@ -97,7 +118,7 @@ class FirstTwoOwnedTest(unittest.IsolatedAsyncioTestCase):
                 summary = await summaries.collect_epic_games_with_summary(agent)
             self.assertEqual(expected, summary.all_previously_owned)
 
-    async def test_detector_honors_cached_first_two_but_new_game_resets_rule(self):
+    async def test_detector_honors_two_of_first_three_but_new_game_resets_rule(self):
         now = datetime.now(timezone.utc)
         def payload(identity):
             return {"data": {"Catalog": {"searchStore": {"elements": [{
@@ -112,15 +133,15 @@ class FirstTwoOwnedTest(unittest.IsolatedAsyncioTestCase):
         games = [SimpleNamespace(**game) for game, _ in active_free_offers(current, now)]
         emails = [f"fixture{index}@example.invalid" for index in range(8)]
         with tempfile.TemporaryDirectory() as folder, patch.dict(
-            os.environ, {"EPIC_STOP_AFTER_TWO_OWNED": "true"}
+            os.environ, {"EPIC_STOP_IF_TWO_OF_THREE_OWNED": "true"}
         ):
             state = ClaimState(Path(folder)/"ledger.json")
             state.register(emails, games, now)
-            for email in emails[:2]:
+            for email in (emails[0], emails[2]):
                 state.confirm(email, games, {("fixture", "one")})
             self.assertFalse(should_claim(current, state, emails, now))
             self.assertTrue(should_claim(payload("two"), state, emails, now))
-            self.assertTrue(state.pending(emails[2], games, now=now))
+            self.assertTrue(state.pending(emails[1], games, now=now))
 
 
 if __name__ == "__main__":

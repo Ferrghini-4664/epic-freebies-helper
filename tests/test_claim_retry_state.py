@@ -68,6 +68,21 @@ class ClaimRetryTest(unittest.TestCase):
         self.assertTrue(should_claim(payload, self.state, self.emails, NOW + timedelta(days=2)))
         self.assertFalse(should_claim(payload, self.state, self.emails, NOW + timedelta(days=8)))
 
+    def test_production_disables_failed_weekly_and_daily_retries(self):
+        with patch.dict(os.environ, {"EPIC_RETRY_FAILED_ACCOUNTS": "false"}):
+            self.assertTrue(should_claim(self.payload, self.state, self.emails, NOW))
+            self.state.register(self.emails, self.games, NOW)
+            self.state.attempted(self.emails[0], self.games, now=NOW)
+            self.state.confirm(self.emails[0], self.games, {("fixture", "daily")})
+            noon = NOW + timedelta(hours=12)
+            self.assertFalse(should_claim(self.payload, self.state, self.emails, noon))
+            weekly_payload = catalog(168, "weekly")
+            targets = games(weekly_payload)
+            self.state.register(self.emails, targets, NOW)
+            self.state.attempted(self.emails[1], targets, now=NOW)
+            self.assertFalse(should_claim(weekly_payload, self.state, self.emails, noon))
+            self.assertTrue(should_claim(catalog(24, "new-daily"), self.state, self.emails, noon))
+
     def test_partial_orders_and_same_namespace_do_not_confirm_other_game(self):
         targets = self.games + games(catalog(24, "other"))
         self.state.register(self.emails, targets, NOW)

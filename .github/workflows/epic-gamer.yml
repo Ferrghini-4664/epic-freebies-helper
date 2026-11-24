@@ -17,13 +17,14 @@ on:
         type: string
         default: glm
   schedule:
-    # Beijing Monday 21:30 full claim, daily 00:40 check and 12:40 retry.
+    # Beijing Monday 21:30 full claim; daily 00:40 and 12:40 detect new short offers.
     - cron: '30 13 * * 1'
     - cron: '40 16 * * *'
     - cron: '40 4 * * *'
 
 env:
-  EPIC_STOP_AFTER_TWO_OWNED: 'true'
+  EPIC_STOP_IF_TWO_OF_THREE_OWNED: 'true'
+  EPIC_RETRY_FAILED_ACCOUNTS: 'false'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:

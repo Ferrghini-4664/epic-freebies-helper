@@ -1525,3 +1525,18 @@
 - Validation: Six offline shortcut tests passed. Daily/weekly retry and aggregate WeChat regressions are rerun, and upstream sync includes the shortcut tests.
 - Limit: Skipping the remaining accounts relies on the user's synchronized-account assumption. A divergence in those accounts can leave an offer unclaimed.
 - Scope: Current in-flight runs keep their original code; no live claim or model call was started.
+
+## 2026-11-24 · Require two owned accounts among the first three
+
+- User requested tolerance for one region-restricted account among the first three configured accounts.
+- Changed: EPIC_STOP_IF_TWO_OF_THREE_OWNED replaces the first-two-only switch in the shared workflow, multi-account loop and public retry detector. Two distinct accounts among positions 1–3 must confirm prior ownership of every active offer. If positions 1 and 2 qualify, later checks are unnecessary; otherwise position 3 is evaluated.
+- Result: Remaining accounts are skipped by rule, and any failed/unknown account already examined retains its own pending record. Accounts outside positions 1–3 cannot contribute to the quorum.
+- Validation: Expanded offline simulations cover all two-of-three combinations, one failed account, duplicate credentials, newly claimed or unconfirmed offers, and a new promotion window.
+- Scope: Existing active jobs continue with their original workflow; no real claim or model request was started.
+
+## 2026-11-24 · Suspend automatic retries for failed accounts in production
+
+- User reported unreliable success classification and requested observation before enabling repeat attempts.
+- Changed: Shared workflow sets EPIC_RETRY_FAILED_ACCOUNTS=false. The catalog detector considers only short promotion/account windows absent from the ledger; it ignores pending weekly and previously attempted daily failures. A second daily catalog check can discover a new window without rerunning the same recorded window.
+- Result: Production keeps Monday 21:30 regular claims and special-event daily/new-window claims. Retry implementation remains available behind the flag, and manual dispatch remains available. Existing in-flight runs are untouched.
+- Validation: Added a production-mode simulation for no midday retry after a daily failure, no weekly failure retry, and triggering on the next new short offer.
