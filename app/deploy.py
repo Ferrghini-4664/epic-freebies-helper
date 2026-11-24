@@ -35,6 +35,7 @@ from services.telegram_notification_service import (
 )
 from services.wxpush_notification_service import (
     send_collection_summary_to_wxpush,
+    send_batch_summary_to_wxpush,
     wxpush_notifications_enabled,
 )
 from settings import LOG_DIR
@@ -137,16 +138,21 @@ async def execute_browser_tasks(
         return summary
 
 
-async def _deliver_collection_summary(summary, *, account_label: str | None = None) -> None:
+async def _deliver_collection_summary(
+    summary, *, account_label: str | None = None, wxpush_results: list | None = None
+) -> None:
     """Fan the claim summary out to every configured notification channel."""
     if telegram_notifications_enabled():
         await send_collection_summary_to_telegram(summary, account_label=account_label)
-    if wxpush_notifications_enabled():
+    if wxpush_results is not None:
+        wxpush_results.append({"account": account_label, "summary": summary})
+    elif wxpush_notifications_enabled():
         await send_collection_summary_to_wxpush(summary, account_label=account_label)
 
 
 async def execute_browser_tasks_with_notification(
-    headless: bool | str = True, *, account_label: str | None = None
+    headless: bool | str = True, *, account_label: str | None = None,
+    wxpush_results: list | None = None
 ) -> str | None:
     pending_promotions = None
     if CLAIM_STATE is not None:
@@ -157,6 +163,8 @@ async def execute_browser_tasks_with_notification(
         )
         if not pending_promotions:
             logger.info("Skipping account: no unconfirmed active offers due for retry")
+            if wxpush_results is not None:
+                wxpush_results.append({"account": account_label, "summary": None, "status": "跳过"})
             return None
         CLAIM_STATE.attempted(settings.EPIC_EMAIL, pending_promotions)
 
@@ -188,7 +196,8 @@ async def execute_browser_tasks_with_notification(
         # rate-limited outcome must not swallow the failure notification.
         if notifications_enabled:
             await _deliver_collection_summary(
-                failure_summary_from_exception(err), account_label=account_label
+                failure_summary_from_exception(err), account_label=account_label,
+                wxpush_results=wxpush_results
             )
         if _is_free_game_rate_limit_error(err):
             logger.warning(
@@ -206,7 +215,9 @@ async def execute_browser_tasks_with_notification(
             summary.unconfirmed_promotions = remaining
             summary.error_message = summary.error_message or "Order history did not confirm all active offers"
     if notifications_enabled:
-        await _deliver_collection_summary(summary, account_label=account_label)
+        await _deliver_collection_summary(
+            summary, account_label=account_label, wxpush_results=wxpush_results
+        )
     if CLAIM_STATE is not None and CLAIM_STATE.pending(
         settings.EPIC_EMAIL, pending_promotions
     ):
@@ -224,6 +235,7 @@ async def execute_multiple_accounts(
     succeeded = 0
     rate_limited_accounts: list[str] = []
     failed_accounts: list[str] = []
+    wxpush_results: list[dict] = []
 
     for index, (email, password) in enumerate(accounts, 1):
         masked_email = mask_email(email)
@@ -231,13 +243,17 @@ async def execute_multiple_accounts(
         logger.info("Processing account {}/{}: {}", index, total, masked_email)
         logger.info("=" * 60)
 
+        result_start = len(wxpush_results)
+        status = "成功"
         try:
             # Swap active credentials so user_data_dir and login use this account.
             swap_account(email, password)
             outcome = await execute_browser_tasks_with_notification(
-                headless=headless, account_label=masked_email
+                headless=headless, account_label=masked_email,
+                wxpush_results=wxpush_results
             )
             if outcome == RATE_LIMITED_OUTCOME:
+                status = "限流待重试"
                 rate_limited_accounts.append(masked_email)
                 logger.warning(
                     "Account {}/{} stopped by Epic's 24-hour free-game limit: {}",
@@ -246,14 +262,23 @@ async def execute_multiple_accounts(
                     masked_email,
                 )
             elif outcome == UNCONFIRMED_OUTCOME:
+                status = "未确认"
                 failed_accounts.append(masked_email)
             else:
                 succeeded += 1
                 logger.success("Account {}/{} completed: {}", index, total, masked_email)
         except Exception as err:
+            status = "失败"
             failed_accounts.append(masked_email)
             logger.error("Account {}/{} failed: {} | error: {}", index, total, masked_email, err)
             # Continue to next account — don't abort the entire run
+
+        if len(wxpush_results) == result_start:
+            wxpush_results.append({"account": masked_email, "summary": None})
+        wxpush_results[-1].setdefault("status", status)
+
+    if wxpush_notifications_enabled():
+        await send_batch_summary_to_wxpush(wxpush_results)
 
     logger.info("=" * 60)
     logger.info(

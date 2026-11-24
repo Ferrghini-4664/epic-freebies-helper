@@ -182,6 +182,42 @@ def _success_message(text: str) -> str | None:
 async def send_collection_summary_to_wxpush(
     summary: CollectionSummary, *, account_label: str | None = None
 ) -> None:
+    await _send_wxpush_message(
+        build_wxpush_title(summary),
+        build_wxpush_content(summary, account_label=account_label),
+    )
+
+
+async def send_batch_summary_to_wxpush(results: list[dict]) -> None:
+    counts = {}
+    for result in results:
+        status = result["status"]
+        counts[status] = counts.get(status, 0) + 1
+    pending_count = sum(counts.get(status, 0) for status in ("失败", "未确认", "限流待重试"))
+    title = _clip_field(
+        f"Epic汇总:成功{counts.get('成功', 0)} 待重试{pending_count}",
+        TITLE_FIELD_MAX_CHARS,
+    )
+    lines = [
+        f"整轮结束，共{len(results)}个账号",
+        " / ".join(f"{status}{count}" for status, count in counts.items()),
+    ]
+    for result in results:
+        detail = f"{result['account']}：{result['status']}"
+        summary = result.get("summary")
+        if summary is not None:
+            detail += f"，新领{len(summary.newly_claimed_promotions)}"
+            if summary.error_message:
+                detail += "，" + _first_error_line(summary.error_message)[:50]
+        lines.append(detail)
+    message = "\n".join(lines)
+    if len(message) > CONTENT_MAX_CHARS:
+        suffix = "\n...(其余见运行日志)"
+        message = message[:CONTENT_MAX_CHARS - len(suffix)] + suffix
+    await _send_wxpush_message(title, message)
+
+
+async def _send_wxpush_message(title: str, content: str) -> None:
     if not wxpush_notifications_enabled():
         logger.debug("WXPush notification is not configured; skipping delivery")
         return
@@ -192,8 +228,8 @@ async def send_collection_summary_to_wxpush(
     try:
         endpoint = _normalize_wxsend_endpoint()
         payload: dict[str, object] = {
-            "title": build_wxpush_title(summary),
-            "content": build_wxpush_content(summary, account_label=account_label),
+            "title": title,
+            "content": content,
         }
         if userid := _env("WXPUSH_USERID"):
             payload["userid"] = userid

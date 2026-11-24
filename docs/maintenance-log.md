@@ -1500,3 +1500,12 @@
 - Workflow: Restore/save a shared GitHub Actions cache under the existing claim concurrency group, including save attempts on failure/cancellation. Ordinary attempts have a four-hour automatic cooldown and Epic rate limits have a 24-hour cooldown. Expired promotions stop retrying. Missing/evicted state can cause rechecks; confirmed order checks still protect against duplicate purchases. Automatic claim schedules remain absent.
 - Validation: Eleven offline simulations passed for daily and weekly campaigns, partial confirmation, a later giveaway of the same game, added/removed accounts, cooldowns, malformed state, restart persistence, and normal multi-account entry. Sync compatibility also runs these regressions.
 - Scope: No real account login, model call, notification or automated claim was started.
+
+## 2026-11-24 · One WeChat summary after multi-account completion
+
+- Symptom: Each account emitted an individual WeChat notification.
+- Cause: The account wrapper sent WXPush immediately on success or failure.
+- Changed: Multi-account execution buffers WeChat results and sends one aggregate after all accounts have been processed, before propagating aggregate failure. Includes masked account labels and success, failure, unconfirmed, skipped and rate-limited totals. Single-account delivery reuses the existing transport.
+- Validation: Four offline batch tests passed, including success, failure followed by later accounts, mixed status formatting, and long-message limits. Upstream sync includes the new regression.
+- Limit: Forced cancellation or runner termination before the account loop finishes may prevent the final aggregate notification. Long lists are clipped with a reference to run logs.
+- Result: Scheduled claiming stays paused and this change sends no real notification or model request.
