@@ -16,7 +16,11 @@ on:
       provider:
         type: string
         default: glm
-  # Scheduled claims paused by user on 2026-11-23.
+  schedule:
+    # Beijing Monday 21:30 full claim, daily 00:40 check and 12:40 retry.
+    - cron: '30 13 * * 1'
+    - cron: '40 16 * * *'
+    - cron: '40 4 * * *'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -141,7 +145,7 @@ jobs:
           GEMINI_MODEL: gemini-3.8-flash
           GLM_API_KEY: ${{ inputs.provider == 'commandcode' && secrets.COMMANDCODE_API_KEY || (inputs.provider != 'commandcode' && secrets.GLM_API_KEY) }}
           GLM_BASE_URL: ${{ inputs.provider == 'commandcode' && 'https://api.commandcode.ai/provider/v1' || 'https://open.bigmodel.cn/api/paas/v4' }}
-          GLM_MODEL: ${{ inputs.provider == 'commandcode' && 'z-ai/glm-5.3-flash' || (inputs.provider == 'glm-paid' && 'glm-4.6v' || 'glm-4.6v-flash') }}
+          GLM_MODEL: ${{ inputs.provider == 'commandcode' && 'z-ai/glm-5.3-flash' || ((github.event_name == 'schedule' || inputs.provider == 'glm-paid') && 'glm-4.6v' || 'glm-4.6v-flash') }}
           CHALLENGE_CLASSIFIER_MODEL: ""
           IMAGE_CLASSIFIER_MODEL: ""
           SPATIAL_POINT_REASONER_MODEL: ""

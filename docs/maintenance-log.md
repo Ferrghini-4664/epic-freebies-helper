@@ -1509,3 +1509,10 @@
 - Validation: Four offline batch tests passed, including success, failure followed by later accounts, mixed status formatting, and long-message limits. Upstream sync includes the new regression.
 - Limit: Forced cancellation or runner termination before the account loop finishes may prevent the final aggregate notification. Long lists are clipped with a reference to run logs.
 - Result: Scheduled claiming stays paused and this change sends no real notification or model request.
+
+## 2026-11-24 · Restore scheduled production claims
+
+- User authorized restoring scheduled production while the current successful manual run continues.
+- Changed: Reinstated Monday 21:30 Beijing full claim and daily 00:40/12:40 detection and retry schedules. Scheduled claim calls route to official glm-4.6v, matching the user's successful manual trial.
+- Result: Existing run is untouched; subsequent runs use the updated workflow and shared claim concurrency/state. Manual GLM Flash, Gemini, Command Code and paid GLM entry points retain their routing.
+- Billing constraint: User intends consumption of new-user grants only. API success does not establish grant source or remaining eligibility; the workflow cannot enforce cash-versus-grant billing.
