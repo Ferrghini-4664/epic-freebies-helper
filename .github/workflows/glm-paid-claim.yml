@@ -1,9 +1,16 @@
 name: Epic Claim - GLM 4.6V Paid
 on:
   workflow_dispatch:
+    inputs:
+      account_index:
+        description: '只运行第几个账号（0 为全部）'
+        type: string
+        default: '0'
+        required: true
 jobs:
   claim:
     uses: ./.github/workflows/epic-gamer.yml
     with:
       provider: glm-paid
+      account_index: ${{ inputs.account_index }}
     secrets: inherit

@@ -1549,3 +1549,11 @@
 - Result: Unconfirmed ownership fails instead of reporting successful account completion. A delayed order-history update may conservatively leave a genuine claim unconfirmed. Isolated fix for easier upstream reconciliation.
 - Validation: Static checks only; no tests, browser claiming, model requests or workflow dispatch. Automatic claiming must remain paused.
 - Pause verification: GitHub workflow was active when inspected; disabled it under the current user instruction and verified the disabled banner. Existing cron definitions are retained for a future explicitly authorized resume.
+
+## 2026-11-24 · Select one account for manual paid-GLM execution
+
+- Symptom/request: User authorized one real run for configured account 5, without monitoring or resuming scheduled claims.
+- Root cause: The manual entry previously always processed the complete account list.
+- Changed files: .github/workflows/glm-paid-claim.yml, .github/workflows/epic-gamer.yml, app/deploy.py and this log. Added optional account_index (0 preserves all-account behavior), passed as EPIC_ACCOUNT_INDEX, validated before browser initialization and selected only the requested parsed account. Invalid selections fail closed without a legacy fallback.
+- Result: Manual account 5 can use the ownership fix without changing stored credentials. Scheduled workflow remains disabled.
+- Validation: Static syntax/diff checks only before the explicitly authorized real dispatch; no local tests or claims.

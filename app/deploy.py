@@ -340,7 +340,13 @@ async def _run_accounts(headless: bool | str = True) -> None:
     - some valid + some invalid rows: fail with configuration error
     - fully valid rows: multi-account aggregation loop
     """
+    selected_index = os.getenv("EPIC_ACCOUNT_INDEX", "0").strip()
+    if not selected_index.isdecimal():
+        raise RuntimeError("EPIC_ACCOUNT_INDEX must be 0 (all) or a positive account number")
+    account_index = int(selected_index)
     raw = get_epic_accounts_raw()
+    if account_index and not raw:
+        raise RuntimeError("Account selection requires EPIC_ACCOUNTS; refusing single-account fallback")
 
     if not raw:
         # Preserve the exact legacy single-account execution path.
@@ -350,6 +356,9 @@ async def _run_accounts(headless: bool | str = True) -> None:
         return
 
     accounts, invalid_lines = parse_multi_accounts(raw)
+
+    if not accounts and account_index:
+        raise RuntimeError("No valid EPIC_ACCOUNTS entries for the requested account")
 
     if not accounts:
         email = (settings.EPIC_EMAIL or "").strip()
@@ -371,6 +380,12 @@ async def _run_accounts(headless: bool | str = True) -> None:
         raise RuntimeError(
             "Invalid EPIC_ACCOUNTS entries on line(s): " + ", ".join(map(str, invalid_lines))
         )
+
+    if account_index:
+        if account_index > len(accounts):
+            raise RuntimeError("Requested account number exceeds configured account count")
+        logger.info("Manual selection: only configured account {} will run", account_index)
+        accounts = [accounts[account_index - 1]]
 
     # Only explicitly enabled, fully valid multi-account configurations
     # should enter the aggregation loop.

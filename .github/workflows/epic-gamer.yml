@@ -13,6 +13,9 @@ on:
           - gemini
   workflow_call:
     inputs:
+      account_index:
+        type: string
+        default: '0'
       provider:
         type: string
         default: glm
@@ -50,6 +53,7 @@ jobs:
           PYTHONPATH: app
           EPIC_CLAIM_STATE_PATH: .claim-state/ledger.json
           EPIC_ACCOUNTS: ${{ secrets.EPIC_ACCOUNTS }}
+          EPIC_ACCOUNT_INDEX: ${{ inputs.account_index || '0' }}
           EPIC_EMAIL: ${{ secrets.EPIC_EMAIL }}
         id: detect
         run: python scripts/detect_claim_retries.py
@@ -133,6 +137,7 @@ jobs:
           EPIC_EMAIL: ${{ secrets.EPIC_EMAIL }}
           EPIC_PASSWORD: ${{ secrets.EPIC_PASSWORD }}
           EPIC_ACCOUNTS: ${{ secrets.EPIC_ACCOUNTS }}
+          EPIC_ACCOUNT_INDEX: ${{ inputs.account_index || '0' }}
           EPIC_TOTP_SECRET: ${{ secrets.EPIC_TOTP_SECRET }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
